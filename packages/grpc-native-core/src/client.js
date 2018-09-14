@@ -35,6 +35,7 @@
 var _ = require('lodash');
 
 var client_interceptors = require('./client_interceptors');
+var DefaultCallInvoker = require('./default_call_invoker');
 var grpc = require('./grpc_extension');
 
 var common = require('./common');
@@ -383,23 +384,31 @@ function Client(address, credentials, options) {
       .resolveInterceptorProviders(self.$interceptor_providers, method_definition)
       .concat(self.$interceptors);
   });
-  let channelOverride = options.channelOverride;
-  let channelFactoryOverride = options.channelFactoryOverride;
-  // Exclude channel options which have already been consumed
-  var channel_options = _.omit(options,
-     ['interceptors', 'interceptor_providers',
-      'channelOverride', 'channelFactoryOverride']);
-  /* Private fields use $ as a prefix instead of _ because it is an invalid
-   * prefix of a method name */
-  if (channelOverride) {
-    this.$channel = options.channelOverride;
+
+  if (options.gcpCallInvoker) {
+    var channel = new GcpChannelFactory(address, credentials, channel_options);
+    this.$callInvoker = new GcpCallInvoker(channel);
   } else {
-    if (channelFactoryOverride) {
-      this.$channel = channelFactoryOverride(address, credentials, channel_options);
+    let channelOverride = options.channelOverride;
+    let channelFactoryOverride = options.channelFactoryOverride;
+    // Exclude channel options which have already been consumed
+    var channel_options = _.omit(options,
+       ['interceptors', 'interceptor_providers',
+        'channelOverride', 'channelFactoryOverride']);
+    /* Private fields use $ as a prefix instead of _ because it is an invalid
+     * prefix of a method name */
+    var channel;
+    if (channelOverride) {
+      channel = options.channelOverride;
+    } else if (channelFactoryOverride) {
+      channel = channelFactoryOverride(address, credentials, channel_options);
     } else {
-      this.$channel = new grpc.Channel(address, credentials, channel_options);
+      channel = new grpc.Channel(address, credentials, channel_options);
     }
+    this.$callInvoker = new DefaultCallInvoker(channel);
   }
+
+  this.$channel = this.$callInvoker.getChannel();
 }
 
 exports.Client = Client;
@@ -480,23 +489,24 @@ Client.prototype.makeUnaryRequest = function(path, serialize, deserialize,
 
   metadata = metadata.clone();
 
-  var intercepting_call = client_interceptors.getInterceptingCall(
+  var emitter = new ClientUnaryCall();
+
+  var interceptors = Client.prototype.resolveCallInterceptors.call(
+    this,
     method_definition,
-    options,
-    Client.prototype.resolveCallInterceptors.call(this, method_definition, options.interceptors, options.interceptor_providers),
-    this.$channel,
-    callback
+    options.interceptors,
+    options.interceptor_providers
   );
-  var emitter = new ClientUnaryCall(intercepting_call);
-  var last_listener = client_interceptors.getLastListener(
+
+  this.$callInvoker.makeUnaryRequest(
     method_definition,
+    argument,
+    metadata,
+    options,
+    interceptors,
     emitter,
     callback
   );
-
-  intercepting_call.start(metadata, last_listener);
-  intercepting_call.sendMessage(argument);
-  intercepting_call.halfClose();
 
   return emitter;
 };
@@ -555,21 +565,23 @@ Client.prototype.makeClientStreamRequest = function(path, serialize,
 
   metadata = metadata.clone();
 
-  var intercepting_call = client_interceptors.getInterceptingCall(
+  var emitter = new ClientWritableStream();
+
+  var interceptors = Client.prototype.resolveCallInterceptors.call(
+    this,
     method_definition,
-    options,
-    Client.prototype.resolveCallInterceptors.call(this, method_definition, options.interceptors, options.interceptor_providers),
-    this.$channel,
-    callback
+    options.interceptors,
+    options.interceptor_providers
   );
-  var emitter = new ClientWritableStream(intercepting_call);
-  var last_listener = client_interceptors.getLastListener(
+
+  this.$callInvoker.makeClientStreamRequest(
     method_definition,
+    metadata,
+    options,
+    interceptors,
     emitter,
     callback
   );
-
-  intercepting_call.start(metadata, last_listener);
 
   return emitter;
 };
@@ -614,22 +626,22 @@ Client.prototype.makeServerStreamRequest = function(path, serialize,
   metadata = metadata.clone();
 
   var emitter = new ClientReadableStream();
-  var intercepting_call = client_interceptors.getInterceptingCall(
+
+  var interceptors = Client.prototype.resolveCallInterceptors.call(
+    this,
     method_definition,
-    options,
-    Client.prototype.resolveCallInterceptors.call(this, method_definition, options.interceptors, options.interceptor_providers),
-    this.$channel,
-    emitter
-  );
-  emitter.call = intercepting_call;
-  var last_listener = client_interceptors.getLastListener(
-    method_definition,
-    emitter
+    options.interceptors,
+    options.interceptor_providers
   );
 
-  intercepting_call.start(metadata, last_listener);
-  intercepting_call.sendMessage(argument);
-  intercepting_call.halfClose();
+  this.$callInvoker.makeServerStreamRequest(
+    method_definition,
+    argument,
+    metadata,
+    options,
+    interceptors,
+    emitter
+  );
 
   return emitter;
 };
@@ -670,20 +682,21 @@ Client.prototype.makeBidiStreamRequest = function(path, serialize,
   metadata = metadata.clone();
 
   var emitter = new ClientDuplexStream();
-  var intercepting_call = client_interceptors.getInterceptingCall(
+
+  var interceptors = Client.prototype.resolveCallInterceptors.call(
+    this,
     method_definition,
-    options,
-    Client.prototype.resolveCallInterceptors.call(this, method_definition, options.interceptors, options.interceptor_providers),
-    this.$channel,
-    emitter
-  );
-  emitter.call = intercepting_call;
-  var last_listener = client_interceptors.getLastListener(
-    method_definition,
-    emitter
+    options.interceptors,
+    options.interceptor_providers
   );
 
-  intercepting_call.start(metadata, last_listener);
+  this.$callInvoker.makeBidiStreamRequest(
+    method_definition,
+    metadata,
+    options,
+    interceptors,
+    emitter
+  );
 
   return emitter;
 };
