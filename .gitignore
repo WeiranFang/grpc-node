@@ -5,6 +5,7 @@ node_modules/
 npm-debug.log
 yarn-error.log
 yarn.lock
+package-lock.json
 
 # Emacs temp files
 *~
@@ -15,3 +16,5 @@ packages/grpc-native-core/src/node/
 
 .nyc_output/
 reports/
+
+coverage/

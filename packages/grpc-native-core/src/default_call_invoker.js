@@ -25,11 +25,25 @@
 
 'use strict';
 
+const _ = require('lodash');
 const grpc = require('./grpc_extension');
 const client_interceptors = require('./client_interceptors');
 
 class DefaultCallInvoker {
-  constructor(channel) {
+
+  createChannel(address, credentials, options) {
+    let channelOverride = options.channelOverride;
+    let channelFactoryOverride = options.channelFactoryOverride;
+    var channel_options = _.omit(options, ['channelOverride', 'channelFactoryOverride']);
+
+    var channel;
+    if (channelOverride) {
+      channel = options.channelOverride;
+    } else if (channelFactoryOverride) {
+      channel = channelFactoryOverride(address, credentials, channel_options);
+    } else {
+      channel = new grpc.Channel(address, credentials, channel_options);
+    }
     this._channel = channel;
   }
 
@@ -115,7 +129,7 @@ class DefaultCallInvoker {
       method_definition,
       emitter
     );
-  
+
     intercepting_call.start(metadata, last_listener);
   }
 }

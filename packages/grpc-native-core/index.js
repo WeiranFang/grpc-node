@@ -43,6 +43,8 @@ var protobuf_js_6_common = require('./src/protobuf_js_6_common');
 
 var constants = require('./src/constants.js');
 
+var client_interceptors = require('./src/client_interceptors');
+
 grpc.setDefaultRootsPem(fs.readFileSync(SSL_ROOTS_PATH, 'ascii'));
 
 /**
@@ -377,3 +379,7 @@ exports.Channel = grpc.Channel;
  *     from parentCall
  * @return {grpc~Call}
  */
+
+exports.getInterceptingCall = require('./src/default_call_invoker');
+
+exports.getLastListener = require('./src/client_interceptors');

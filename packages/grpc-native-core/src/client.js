@@ -385,29 +385,16 @@ function Client(address, credentials, options) {
       .concat(self.$interceptors);
   });
 
-  if (options.gcpCallInvoker) {
-    var channel = new GcpChannelFactory(address, credentials, channel_options);
-    this.$callInvoker = new GcpCallInvoker(channel);
-  } else {
-    let channelOverride = options.channelOverride;
-    let channelFactoryOverride = options.channelFactoryOverride;
-    // Exclude channel options which have already been consumed
-    var channel_options = _.omit(options,
-       ['interceptors', 'interceptor_providers',
-        'channelOverride', 'channelFactoryOverride']);
-    /* Private fields use $ as a prefix instead of _ because it is an invalid
-     * prefix of a method name */
-    var channel;
-    if (channelOverride) {
-      channel = options.channelOverride;
-    } else if (channelFactoryOverride) {
-      channel = channelFactoryOverride(address, credentials, channel_options);
-    } else {
-      channel = new grpc.Channel(address, credentials, channel_options);
-    }
-    this.$callInvoker = new DefaultCallInvoker(channel);
-  }
+  var options = _.omit(options, ['interceptors', 'interceptor_providers']);
 
+  if (options.callInvokerOverride) {
+    options = _.omit(options, ['callInvokerOverride']);
+    this.$callInvoker = options.callInvokerOverride;
+  } else {
+    this.$callInvoker = new DefaultCallInvoker();
+  }
+  
+  this.$callInvoker.createChannel(address, credentials, options);
   this.$channel = this.$callInvoker.getChannel();
 }
 
